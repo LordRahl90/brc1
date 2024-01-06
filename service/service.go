@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+)
+
+var (
+	counter = 0
 )
 
 type Station struct {
@@ -55,8 +60,8 @@ func (s *Service) ReadFile() error {
 		}
 		// send this to the channel
 		s.Compute(station)
+		counter++
 	}
-	println("Scan completed!")
 	return nil
 }
 
@@ -87,13 +92,23 @@ func (s *Service) Compute(station *Station) {
 
 func (s *Service) Output() {
 	s.output.WriteString("{")
+	stationNames := make([]string, 0, len(s.stations))
+
 	for _, v := range s.stations {
-		out := fmt.Sprintf("%s=%.2f/%.2f/%.2f\n",
-			v.City, v.Min, v.Mean, v.Max)
+		stationNames = append(stationNames, v.City)
+	}
+	sort.Strings(stationNames)
+
+	for _, st := range stationNames {
+		v := s.stations[st]
+		out := fmt.Sprintf("%s=%.1f/%.1f/%.1f/%d\n",
+			v.City, v.Min, v.Mean, v.Max, v.Count)
 		s.output.WriteString(out)
 	}
+
 	s.output.WriteString("}")
-	println(s.output.String())
+	fmt.Print(s.output.String())
+	println("Counter: ", counter)
 }
 
 func newStation(line string) (*Station, error) {

@@ -9,7 +9,6 @@ import (
 )
 
 func main() {
-	println("Hello, World!")
 	start := time.Now()
 
 	// read file content
