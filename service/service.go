@@ -61,8 +61,12 @@ func (s *Service) ReadFile() error {
 		}
 	}()
 	// var line strings.Builder
-	nChunks := 1000
+	nChunks := 10000
 	chunkSize := len(data) / nChunks
+	if chunkSize == 0 {
+		slog.Error("chunksize is less than 0, will default to 1000")
+		chunkSize = 1000
+	}
 	chunks := make([]int, 0, nChunks)
 	offset := 0
 	for {
@@ -85,7 +89,12 @@ func (s *Service) ReadFile() error {
 	for i, chunk := range chunks {
 		wg.Add(1)
 		go func() {
-			results[i] = s.process(&wg, data[start:chunk])
+			// println("Chunk: ", chunk, "Size: ", len(data))
+			chunkData := data[start:chunk]
+			result := s.process(&wg, chunkData)
+			if result != nil {
+				results[i] = result
+			}
 		}()
 		start = chunk
 	}
@@ -106,6 +115,9 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 	defer func() {
 		wg.Done()
 	}()
+	if data == nil {
+		return nil
+	}
 	result := make(map[string]*Station)
 	var (
 		line    strings.Builder
@@ -120,7 +132,7 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 		station, err := newStation(content)
 		if err != nil {
 			slog.Error("an error occurred", "error", err, "line", line.String())
-			content = []byte{}
+			content = nil
 			continue
 
 		}
@@ -144,8 +156,7 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 			curr.Max = max(station.Measurement)
 			result[station.City] = curr
 		}
-		content = []byte{}
-		// line.Reset()
+		content = nil
 	}
 	return result
 }

@@ -31,7 +31,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	svc.Output()
+	// svc.Output()
 	dur := time.Since(start)
 	fmt.Printf("\nAll done Within %.2f seconds\n", dur.Seconds())
 }
