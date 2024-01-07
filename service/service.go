@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type Station struct {
@@ -101,12 +102,14 @@ func (s *Service) ReadFile() error {
 
 	wg.Wait()
 	println("All chunks read successfully")
-
+	st := time.Now()
 	for _, result := range results {
 		for _, v := range result {
 			s.Compute(v)
 		}
 	}
+	end := time.Since(st)
+	fmt.Printf("Sorting the results took %.2f\n", end.Seconds())
 
 	return nil
 }
@@ -116,8 +119,10 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 		wg.Done()
 	}()
 	if data == nil {
+		slog.Error("empty data")
 		return nil
 	}
+	start := time.Now()
 	result := make(map[string]*Station)
 	var (
 		line    strings.Builder
@@ -158,6 +163,8 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 		}
 		content = nil
 	}
+	dur := time.Since(start)
+	fmt.Printf("Processing took %.2f\n", dur.Seconds())
 	return result
 }
 
