@@ -25,11 +25,9 @@ type Station struct {
 
 // Service is the service interface.
 type Service struct {
-	m          sync.Mutex
 	fileName   string
 	stations   map[string]*Station
 	output     strings.Builder
-	outChan    chan string
 	resultChan chan map[string]*Station
 	wg         *sync.WaitGroup
 }
