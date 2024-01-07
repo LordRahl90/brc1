@@ -1,17 +1,16 @@
 package service
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
-)
-
-var (
-	counter = 0
+	"sync"
+	"syscall"
 )
 
 type Station struct {
@@ -26,43 +25,128 @@ type Station struct {
 
 // Service is the service interface.
 type Service struct {
-	fileName string
-	stations map[string]*Station
-	output   strings.Builder
+	m          sync.Mutex
+	fileName   string
+	stations   map[string]*Station
+	output     strings.Builder
+	outChan    chan string
+	resultChan chan map[string]*Station
+	wg         *sync.WaitGroup
 }
 
-func NewService(fileName string) *Service {
+func NewService(fileName string, wg *sync.WaitGroup) *Service {
 	return &Service{
 		fileName: fileName,
 		stations: make(map[string]*Station),
+		// outChan:    make(chan string),
+		resultChan: make(chan map[string]*Station),
+		wg:         wg,
 	}
 }
 
 // ReadFile reads the file and send the data to the channel.
 func (s *Service) ReadFile() error {
+	var wg sync.WaitGroup
 	file, err := os.Open(s.fileName)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		station, err := newStation(line)
-		if err != nil {
-			slog.Error("Error while reading file", err, slog.String("line", line))
-			continue
-		}
-		// send this to the channel
-		s.Compute(station)
-		counter++
+	fs, err := file.Stat()
+	if err != nil {
+		return err
 	}
+	data, err := syscall.Mmap(int(file.Fd()), 0, int(fs.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := syscall.Munmap(data); err != nil {
+			log.Fatal(err)
+		}
+	}()
+	// var line strings.Builder
+	nChunks := 1000
+	chunkSize := len(data) / nChunks
+	chunks := make([]int, 0, nChunks)
+	offset := 0
+	for {
+		offset += chunkSize
+		if offset >= len(data) {
+			break
+		}
+
+		// find the first newline position between the offset and the end of the data
+		nlPos := bytes.IndexByte(data[offset:], '\n')
+		if nlPos == -1 {
+			chunks = append(chunks, len(data))
+		} else {
+			offset += nlPos + 1
+			chunks = append(chunks, offset)
+		}
+	}
+	start := 0
+	results := make([]map[string]*Station, len(chunks))
+	for i, chunk := range chunks {
+		wg.Add(1)
+		go func() {
+			results[i] = s.process(&wg, data[start:chunk])
+		}()
+		start = chunk
+	}
+
+	wg.Wait()
+	println("All chunks read successfully")
+
+	for _, result := range results {
+		for _, v := range result {
+			s.Compute(v)
+		}
+	}
+
 	return nil
+}
+
+func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
+	defer func() {
+		wg.Done()
+	}()
+	result := make(map[string]*Station)
+	var line strings.Builder
+	for _, v := range data {
+		if string(v) != "\n" {
+			line.WriteByte(v)
+			continue
+		}
+		station, err := newStation(line.String())
+		if err != nil {
+			slog.Error("an error occurred", "error", err, "line", line.String())
+			line.Reset()
+			continue
+
+		}
+		curr, ok := result[station.City]
+		if !ok {
+			curr = &Station{
+				City:        station.City,
+				Measurement: station.Measurement,
+				Sum:         station.Measurement,
+				Mean:        station.Measurement,
+				Min:         station.Measurement,
+				Max:         station.Measurement,
+				Count:       1,
+			}
+			result[station.City] = curr
+		} else {
+			curr.Count++
+			curr.Sum += station.Measurement
+			curr.Mean = curr.Sum / float32(curr.Count)
+			curr.Min = min(curr.Min, station.Measurement)
+			curr.Max = max(station.Measurement)
+			result[station.City] = curr
+		}
+		line.Reset()
+	}
+	return result
 }
 
 // Compute computes the station data.
@@ -78,15 +162,11 @@ func (s *Service) Compute(station *Station) {
 		s.stations[station.City] = station
 		return
 	}
-	currentStation.Count++
-	currentStation.Sum += station.Measurement
+	currentStation.Count += station.Count
+	currentStation.Sum += station.Sum
 	currentStation.Mean = currentStation.Sum / float32(currentStation.Count)
-	if currentStation.Min > station.Measurement {
-		currentStation.Min = station.Measurement
-	}
-	if currentStation.Max < station.Measurement {
-		currentStation.Max = station.Measurement
-	}
+	currentStation.Min = min(currentStation.Min, station.Min)
+	currentStation.Max = max(currentStation.Max, station.Max)
 	s.stations[station.City] = currentStation
 }
 
@@ -108,7 +188,6 @@ func (s *Service) Output() {
 
 	s.output.WriteString("}")
 	fmt.Print(s.output.String())
-	println("Counter: ", counter)
 }
 
 func newStation(line string) (*Station, error) {
