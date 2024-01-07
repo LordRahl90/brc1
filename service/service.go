@@ -25,20 +25,18 @@ type Station struct {
 
 // Service is the service interface.
 type Service struct {
-	fileName   string
-	stations   map[string]*Station
-	output     strings.Builder
-	resultChan chan map[string]*Station
-	wg         *sync.WaitGroup
+	fileName string
+	stations map[string]*Station
+	output   strings.Builder
+
+	wg *sync.WaitGroup
 }
 
 func NewService(fileName string, wg *sync.WaitGroup) *Service {
 	return &Service{
 		fileName: fileName,
 		stations: make(map[string]*Station),
-		// outChan:    make(chan string),
-		resultChan: make(chan map[string]*Station),
-		wg:         wg,
+		wg:       wg,
 	}
 }
 
@@ -109,16 +107,20 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 		wg.Done()
 	}()
 	result := make(map[string]*Station)
-	var line strings.Builder
+	var (
+		line    strings.Builder
+		content []byte
+	)
+
 	for _, v := range data {
-		if string(v) != "\n" {
-			line.WriteByte(v)
+		if v != '\n' {
+			content = append(content, v)
 			continue
 		}
-		station, err := newStation(line.String())
+		station, err := newStation(content)
 		if err != nil {
 			slog.Error("an error occurred", "error", err, "line", line.String())
-			line.Reset()
+			content = []byte{}
 			continue
 
 		}
@@ -142,7 +144,8 @@ func (s *Service) process(wg *sync.WaitGroup, data []byte) map[string]*Station {
 			curr.Max = max(station.Measurement)
 			result[station.City] = curr
 		}
-		line.Reset()
+		content = []byte{}
+		// line.Reset()
 	}
 	return result
 }
@@ -188,17 +191,18 @@ func (s *Service) Output() {
 	fmt.Print(s.output.String())
 }
 
-func newStation(line string) (*Station, error) {
-	val := strings.Split(line, ";")
-	if len(val) != 2 {
+func newStation(line []byte) (*Station, error) {
+	offset := bytes.IndexByte(line, ';')
+	if offset == -1 {
 		return nil, fmt.Errorf("invalid line: %s", line)
 	}
-	temp, err := strconv.ParseFloat(val[1], 32)
+
+	temp, err := strconv.ParseFloat(string(line[offset+1:]), 32)
 	if err != nil {
 		return nil, err
 	}
 	return &Station{
-		City:        val[0],
+		City:        string(line[:offset]),
 		Measurement: float32(temp),
 	}, nil
 }
