@@ -81,12 +81,8 @@ func (s *Service) Compute(station *Station) {
 	currentStation.Count++
 	currentStation.Sum += station.Measurement
 	currentStation.Mean = currentStation.Sum / float32(currentStation.Count)
-	if currentStation.Min > station.Measurement {
-		currentStation.Min = station.Measurement
-	}
-	if currentStation.Max < station.Measurement {
-		currentStation.Max = station.Measurement
-	}
+	currentStation.Min = min(station.Measurement,currentStation.Min)
+	currentStation.Max = max(currentStation.Max , station.Measurement)
 	s.stations[station.City] = currentStation
 }
 
