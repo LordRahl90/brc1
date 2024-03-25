@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"runtime/pprof"
 	"time"
 
 	"github.com/LordRahl90/brc1/service"
@@ -10,6 +12,35 @@ import (
 
 func main() {
 	start := time.Now()
+	f, err := os.Create("cpu.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(f)
+	if err := pprof.StartCPUProfile(f); err != nil {
+		log.Fatal(err)
+	}
+	defer pprof.StopCPUProfile()
+
+	f, err = os.Create("mem.pprof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(f)
+
+	if err := pprof.WriteHeapProfile(f); err != nil {
+		log.Fatal(err)
+	}
 
 	// read file content
 	// get the line
